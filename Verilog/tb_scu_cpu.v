@@ -43,7 +43,6 @@ module tb_scu_cpu;
     end
 
     initial begin
-        // Hold reset high at the beginning
         reset = 1;
 
         // Clear instruction memory to NOPs
@@ -52,15 +51,24 @@ module tb_scu_cpu;
         end
 
         // ============================================================
-        // Demo assembly with NOPs inserted for pipeline safety
+        // Updated demo program for ID-stage branch resolution
         // ============================================================
         //
-        // Adjusted label addresses:
+        // Final label addresses:
         //
         // LABEL1 = 15
         // SKIP1  = 21
         // LABEL2 = 31
-        // SKIP2  = 36
+        // SKIP2  = 37
+        //
+        // Because SVPC does:
+        // R[rd] = PC + immediate
+        //
+        // Therefore:
+        // PC 1: x10 = 1 + 14 = 15
+        // PC 2: x11 = 2 + 29 = 31
+        // PC 3: x12 = 3 + 18 = 21
+        // PC 4: x13 = 4 + 33 = 37
         //
         // Expected final values:
         // x1  = 100
@@ -75,75 +83,79 @@ module tb_scu_cpu;
         // Mem[100] = 100
         // ============================================================
 
-        dut.IM.mem[0]  = enc_svpc(6'd1,  22'sd100); // x1  = 0 + 100 = 100
-        dut.IM.mem[1]  = enc_svpc(6'd10, 22'sd14);  // x10 = 1 + 14  = 15 LABEL1
-        dut.IM.mem[2]  = enc_svpc(6'd11, 22'sd29);  // x11 = 2 + 29  = 31 LABEL2
-        dut.IM.mem[3]  = enc_svpc(6'd12, 22'sd18);  // x12 = 3 + 18  = 21 SKIP1
-        dut.IM.mem[4]  = enc_svpc(6'd13, 22'sd32);  // x13 = 4 + 32  = 36 SKIP2
+        dut.IM.mem[0]  = enc_svpc(6'd1,  22'sd100);              // x1 = 100
+        dut.IM.mem[1]  = enc_svpc(6'd10, 22'sd14);               // x10 = LABEL1 = 15
+        dut.IM.mem[2]  = enc_svpc(6'd11, 22'sd29);               // x11 = LABEL2 = 31
+        dut.IM.mem[3]  = enc_svpc(6'd12, 22'sd18);               // x12 = SKIP1  = 21
+        dut.IM.mem[4]  = enc_svpc(6'd13, 22'sd33);               // x13 = SKIP2  = 37
 
         dut.IM.mem[5]  = enc(`OP_NOP, 6'd0, 6'd0, 6'd0, 10'd0);
         dut.IM.mem[6]  = enc(`OP_NOP, 6'd0, 6'd0, 6'd0, 10'd0);
 
-        dut.IM.mem[7]  = enc(`OP_INC, 6'd2, 6'd1, 6'd0, 10'd4);     // INC x2, x1, 4 => x2 = 104
-        dut.IM.mem[8]  = enc(`OP_NEG, 6'd3, 6'd1, 6'd0, 10'd0);     // NEG x3, x1 => x3 = -100
+        dut.IM.mem[7]  = enc(`OP_INC, 6'd2, 6'd1, 6'd0, 10'd4);  // x2 = x1 + 4 = 104
+        dut.IM.mem[8]  = enc(`OP_NEG, 6'd3, 6'd1, 6'd0, 10'd0);  // x3 = -x1 = -100
 
         dut.IM.mem[9]  = enc(`OP_NOP, 6'd0, 6'd0, 6'd0, 10'd0);
         dut.IM.mem[10] = enc(`OP_NOP, 6'd0, 6'd0, 6'd0, 10'd0);
 
-        dut.IM.mem[11] = enc(`OP_BRN, 6'd0, 6'd10, 6'd0, 10'd0);    // BRN x10, branch to LABEL1
+        dut.IM.mem[11] = enc(`OP_BRN, 6'd0, 6'd10, 6'd0, 10'd0); // branch to LABEL1
         dut.IM.mem[12] = enc(`OP_NOP, 6'd0, 6'd0, 6'd0, 10'd0);
         dut.IM.mem[13] = enc(`OP_NOP, 6'd0, 6'd0, 6'd0, 10'd0);
-        dut.IM.mem[14] = enc(`OP_INC, 6'd2, 6'd2, 6'd0, 10'd17);    // Should not execute
+        dut.IM.mem[14] = enc(`OP_INC, 6'd2, 6'd2, 6'd0, 10'd17); // should not execute
 
-        // LABEL1 at IM[15]
-        dut.IM.mem[15] = enc(`OP_ADD, 6'd4, 6'd1, 6'd2, 10'd0);     // ADD x4, x1, x2 => x4 = 204
+        // LABEL1 = 15
+        dut.IM.mem[15] = enc(`OP_ADD, 6'd4, 6'd1, 6'd2, 10'd0);  // x4 = x1 + x2 = 204
 
         dut.IM.mem[16] = enc(`OP_NOP, 6'd0, 6'd0, 6'd0, 10'd0);
         dut.IM.mem[17] = enc(`OP_NOP, 6'd0, 6'd0, 6'd0, 10'd0);
 
-        dut.IM.mem[18] = enc(`OP_BRN, 6'd0, 6'd12, 6'd0, 10'd0);    // BRN x12, should not branch
+        dut.IM.mem[18] = enc(`OP_BRN, 6'd0, 6'd12, 6'd0, 10'd0); // should not branch
         dut.IM.mem[19] = enc(`OP_NOP, 6'd0, 6'd0, 6'd0, 10'd0);
-        dut.IM.mem[20] = enc(`OP_INC, 6'd4, 6'd4, 6'd0, 10'd6);     // INC x4, x4, 6 => x4 = 210
+        dut.IM.mem[20] = enc(`OP_INC, 6'd4, 6'd4, 6'd0, 10'd6);  // x4 = 210
 
-        // SKIP1 at IM[21]
-        dut.IM.mem[21] = enc(`OP_ST, 6'd0, 6'd1, 6'd1, 10'd0);      // ST x1, x1 => Mem[100] = 100
+        // SKIP1 = 21
+        dut.IM.mem[21] = enc(`OP_ST, 6'd0, 6'd1, 6'd1, 10'd0);   // Mem[x1] = x1 = Mem[100] = 100
         dut.IM.mem[22] = enc(`OP_NOP, 6'd0, 6'd0, 6'd0, 10'd0);
 
-        dut.IM.mem[23] = enc(`OP_LD, 6'd5, 6'd1, 6'd0, 10'd0);      // LD x5, x1 => x5 = Mem[100] = 100
+        dut.IM.mem[23] = enc(`OP_LD, 6'd5, 6'd1, 6'd0, 10'd0);   // x5 = Mem[x1] = 100
         dut.IM.mem[24] = enc(`OP_NOP, 6'd0, 6'd0, 6'd0, 10'd0);
         dut.IM.mem[25] = enc(`OP_NOP, 6'd0, 6'd0, 6'd0, 10'd0);
 
-        dut.IM.mem[26] = enc(`OP_ADD, 6'd6, 6'd1, 6'd2, 10'd0);     // ADD x6, x1, x2 => x6 = 204
-        dut.IM.mem[27] = enc(`OP_SUB, 6'd7, 6'd5, 6'd1, 10'd0);     // SUB x7, x5, x1 => x7 = 0
+        dut.IM.mem[26] = enc(`OP_ADD, 6'd6, 6'd1, 6'd2, 10'd0);  // x6 = x1 + x2 = 204
+        dut.IM.mem[27] = enc(`OP_SUB, 6'd7, 6'd5, 6'd1, 10'd0);  // x7 = x5 - x1 = 0
 
         dut.IM.mem[28] = enc(`OP_NOP, 6'd0, 6'd0, 6'd0, 10'd0);
         dut.IM.mem[29] = enc(`OP_NOP, 6'd0, 6'd0, 6'd0, 10'd0);
 
-        dut.IM.mem[30] = enc(`OP_BRZ, 6'd0, 6'd11, 6'd0, 10'd0);    // BRZ x11, branch to LABEL2
+        dut.IM.mem[30] = enc(`OP_BRZ, 6'd0, 6'd11, 6'd0, 10'd0); // branch to LABEL2
 
-        // LABEL2 at IM[31]
-        dut.IM.mem[31] = enc(`OP_ADD, 6'd8, 6'd1, 6'd2, 10'd0);     // ADD x8, x1, x2 => x8 = 204
+        // LABEL2 = 31
+        dut.IM.mem[31] = enc(`OP_ADD, 6'd8, 6'd1, 6'd2, 10'd0);  // x8 = x1 + x2 = 204
+
+        // Extra NOP added because branch is now resolved in ID stage.
+        // This gives ADD x8 enough time to update the Zero flag before BRZ checks it.
         dut.IM.mem[32] = enc(`OP_NOP, 6'd0, 6'd0, 6'd0, 10'd0);
+        dut.IM.mem[33] = enc(`OP_NOP, 6'd0, 6'd0, 6'd0, 10'd0);
 
-        dut.IM.mem[33] = enc(`OP_BRZ, 6'd0, 6'd13, 6'd0, 10'd0);    // BRZ x13, should not branch
-        dut.IM.mem[34] = enc(`OP_NOP, 6'd0, 6'd0, 6'd0, 10'd0);
-        dut.IM.mem[35] = enc(`OP_INC, 6'd8, 6'd8, 6'd0, 10'd10);    // INC x8, x8, 10 => x8 = 214
+        dut.IM.mem[34] = enc(`OP_BRZ, 6'd0, 6'd13, 6'd0, 10'd0); // should not branch
+        dut.IM.mem[35] = enc(`OP_NOP, 6'd0, 6'd0, 6'd0, 10'd0);
+        dut.IM.mem[36] = enc(`OP_INC, 6'd8, 6'd8, 6'd0, 10'd10); // x8 = 214
 
-        // SKIP2 at IM[36]
-        dut.IM.mem[36] = enc(`OP_INC, 6'd9, 6'd1, 6'd0, -10'sd5);   // INC x9, x1, -5 => x9 = 95
-        dut.IM.mem[37] = enc(`OP_NOP, 6'd0, 6'd0, 6'd0, 10'd0);
+        // SKIP2 = 37
+        dut.IM.mem[37] = enc(`OP_INC, 6'd9, 6'd1, 6'd0, -10'sd5); // x9 = x1 - 5 = 95
         dut.IM.mem[38] = enc(`OP_NOP, 6'd0, 6'd0, 6'd0, 10'd0);
+        dut.IM.mem[39] = enc(`OP_NOP, 6'd0, 6'd0, 6'd0, 10'd0);
 
-        dut.IM.mem[39] = enc(`OP_JM, 6'd0, 6'd1, 6'd0, 10'd0);      // JM x1 => PC = Mem[100] = 100
+        dut.IM.mem[40] = enc(`OP_JM, 6'd0, 6'd1, 6'd0, 10'd0);   // PC = Mem[x1] = Mem[100] = 100
 
-        // Demo requirement: put this instruction at IM address 100
-        dut.IM.mem[100] = enc(`OP_JM, 6'd0, 6'd1, 6'd0, 10'd0);     // JM x1 at IM[100]
+        // Demo requirement: put JM x1 at instruction memory address 100
+        dut.IM.mem[100] = enc(`OP_JM, 6'd0, 6'd1, 6'd0, 10'd0);
 
-        // Keep reset high long enough to reset PC, RF, DM, and buffers
+        // Reset
         #20;
         reset = 0;
 
-        // Run long enough for program and pipeline to finish
+        // Run long enough for program to finish
         #2000;
 
         $display("==================================");

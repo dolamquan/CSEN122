@@ -10,13 +10,13 @@ module scu_cpu(
     // IF STAGE
     // ============================================================
 
-    wire [31:0] pc; // Current program counter address 
-    wire [31:0] instr_f; // Instruction fetched from instruction memory
+    wire [31:0] pc;
+    wire [31:0] instr_f;
 
     wire stall_pipeline;
-    assign stall_pipeline = 1'b0; // No stall --> depends only on forwarding + NOPs + Flush
+    assign stall_pipeline = 1'b0;
 
-    wire pc_redirect_valid;  // Flag to tell if branching has occured 
+    wire pc_redirect_valid;
     wire [31:0] pc_redirect;
 
     program_counter PC(
@@ -37,10 +37,10 @@ module scu_cpu(
     // IF/ID REGISTER
     // ============================================================
 
-    wire [31:0] ifid_pc; // Carries the PC value after it has been saved inside the IF/ID register
-    wire [31:0] ifid_instr; // Carries instruction after it has been saved inside the IF/ID register
+    wire [31:0] ifid_pc;
+    wire [31:0] ifid_instr;
 
-    wire flush_ifid; // Flush
+    wire flush_ifid;
 
     if_id_reg IF_ID(
         .clk(clk),
@@ -57,18 +57,16 @@ module scu_cpu(
     // ID STAGE
     // ============================================================
 
-    wire [3:0] id_opcode = ifid_instr[31:28]; 
+    wire [3:0] id_opcode = ifid_instr[31:28];
     wire [5:0] id_rd     = ifid_instr[27:22];
     wire [5:0] id_rs     = ifid_instr[21:16];
     wire [5:0] id_rt     = ifid_instr[15:10];
 
-    wire [31:0] imm10 = {{22{ifid_instr[9]}}, ifid_instr[9:0]}; 
+    wire [31:0] imm10 = {{22{ifid_instr[9]}}, ifid_instr[9:0]};
     wire [31:0] imm22 = {{10{ifid_instr[21]}}, ifid_instr[21:0]};
 
     wire [31:0] id_imm;
-    assign id_imm = (id_opcode == `OP_SVPC) ? imm22 : imm10; // If SVPC then use imm22
-
-    // Control Signals
+    assign id_imm = (id_opcode == `OP_SVPC) ? imm22 : imm10;
 
     wire c_reg_write;
     wire c_mem_read;
@@ -140,6 +138,30 @@ module scu_cpu(
         .read_data1(rf_rd1),
         .read_data2(rf_rd2)
     );
+
+    // ============================================================
+    // PREVIOUS FLAGS FOR ID-STAGE BRANCHING
+    // ============================================================
+
+    reg prev_z;
+    reg prev_n;
+
+    // Branch is now resolved in ID stage.
+    wire branch_taken_id;
+
+    assign branch_taken_id =
+        (c_brz && prev_z) ||
+        (c_brn && prev_n);
+
+    // Branch target is R[rs].
+    // Small WB forwarding is included so ID branch target can see a value
+    // being written back in the same cycle.
+    wire [31:0] branch_target_id;
+
+    assign branch_target_id =
+        (memwb_reg_write && (memwb_rd != 6'd0) && (memwb_rd == id_rs)) ?
+        wb_write_data :
+        rf_rd1;
 
     // ============================================================
     // ID/EX REGISTER
@@ -306,39 +328,12 @@ module scu_cpu(
         .N(alu_n)
     );
 
-    // ============================================================
-    // PREVIOUS FLAGS FOR BRZ / BRN
-    // ============================================================
-
-    reg prev_z; // Stores whether the previous ALU result was 0
-    reg prev_n; // Stores whether the previous ALU result was negative
-
-    wire branch_flag_z;
-    wire branch_flag_n;
-
-    assign branch_flag_z = exmem_updates_flags ? exmem_z : prev_z; // If instruction in EX/MEM --> update flags and use its zero flag; else, use the older stored previous zero flag
-    assign branch_flag_n = exmem_updates_flags ? exmem_n : prev_n; // If instruction in EX/MEM --> update flags and use its neg flag; else, use the older stored previous neg flag
-
-    wire branch_taken_ex;
-
-    assign branch_taken_ex =
-        (idex_brz && branch_flag_z) ||
-        (idex_brn && branch_flag_n);
-
-    wire [31:0] branch_target_ex;
-    assign branch_target_ex = alu_a_forwarded;
-
     wire updates_flags_ex;
 
-    // Should we update the current flags or not --> if it is BRZ, BRN, or JM then don't because we don't want to overwrite the previous ALU flags
-    // Only update flags for real working instruction
     assign updates_flags_ex =
         !(idex_brz || idex_brn || idex_jm) &&
         (idex_reg_write || idex_mem_write || idex_mem_read);
 
-    // IMPORTANT:
-    // Do not flush EX/MEM on branch.
-    // Only younger instructions in IF/ID and ID/EX should be flushed.
     wire flush_exmem;
     assign flush_exmem = 1'b0;
 
@@ -401,23 +396,20 @@ module scu_cpu(
     );
 
     // ============================================================
-    // PC REDIRECT LOGIC
+    // PC REDIRECT + FLUSH LOGIC
     // ============================================================
 
-    wire [31:0] pc_redirect_mux_out;
-
+    // Branch target comes from ID.
+    // JM target comes from data memory output in MEM.
     mux2_32 PC_REDIRECT_MUX(
         .in0(dmem_read_data),
-        .in1(branch_target_ex),
-        .sel(branch_taken_ex),
-        .out(pc_redirect_mux_out)
+        .in1(branch_target_id),
+        .sel(branch_taken_id),
+        .out(pc_redirect)
     );
 
-    assign pc_redirect = pc_redirect_mux_out;
+    assign pc_redirect_valid = branch_taken_id || exmem_jm;
 
-    assign pc_redirect_valid = branch_taken_ex || exmem_jm;
-
-    // Flush younger instructions after branch or jump redirect.
     assign flush_ifid = pc_redirect_valid;
     assign flush_idex = pc_redirect_valid;
 
