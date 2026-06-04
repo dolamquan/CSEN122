@@ -411,7 +411,7 @@ module scu_cpu(
     assign pc_redirect_valid = branch_taken_id || exmem_jm;
 
     assign flush_ifid = pc_redirect_valid;
-    assign flush_idex = pc_redirect_valid;
+    assign flush_idex = exmem_jm;
 
     // ============================================================
     // MEM/WB REGISTER
